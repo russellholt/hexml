@@ -1,0 +1,921 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+
+<HEAD>
+
+<TITLE>hexml - ultralite xml parsing and streaming</TITLE>
+
+<style><!--
+
+h1 {
+	font-size: x-large;
+	font-family: sans-serif;	
+}
+
+h2 {
+	font-weight: bold;
+	font-family: sans-serif;	
+	
+}
+
+--></style>
+
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<center>
+<H1><A NAME="hexml">hexml</A></H1>
+
+<P>
+<I>ultralite xml parsing and streaming in java</I>
+</P>
+
+<P>
+Russell Holt
+<br>
+Destiny
+<br>
+<A HREF="mailto:russell.holt@destiny.com">russell.holt@destiny.com</A>
+</P>
+
+
+
+</center>
+
+
+<P>
+<B>Hexml</B> provides a system for parsing and streaming XML.
+It similar in spirit to event-based parsing, like <A
+HREF="http://www.megginson.com/SAX/index.html" TARGET="_blank">SAX</A>, but
+differs primarily in that its events occur in the Java world - instead of
+registering callbacks with SAX for example,
+"start element <I>x</I>" or "end element <i>x</i>" events,
+one tells
+hexml that when encountering x, instantiate a particular java class.
+Characteristics of this object, such as whether it is "atomic", a
+"container", etc., determine what hexml does with it.
+</P>
+
+<P><B>Hexml</B> works by mapping element tag names to
+java class names.  This constitutes the hexml "vocabulary" that you may give a
+hexml parser instance for
+a specific document.  Hexml creates objects that correspond to
+the things it has been told are important; much of the operational
+decisions of hexml can be overridden in this way to provide specific,
+circumstantial functionality.
+</P>
+
+<P>
+<b><A NAME="Use Hexml when:">Use Hexml when:</A></b>
+</P>
+
+<ul>
+	<li> you want simplicity and high performance
+	<li> validation is not important
+	<li> strict XML conformance is unnecessary or impossible (as in the rule <I>be strict on output, but forgiving on input</I>)
+	<li> you don't need to create DOM trees
+	<li> you want to create a tree of your own classes, but SAX events are too low level
+</ul>
+
+
+<P>
+<b><A NAME="Don't use Hexml">Don't use Hexml when:</A></b>
+</P>
+
+<ul>
+	<li> you need DTDs and validation
+	<li> you need DOM trees
+	<li> you want to do XSL transformations (etc..)
+</ul>
+
+
+<hr width="50%">
+
+		<!--
+
+			<P>
+			the <B>ultralite</B> philosophy is:
+			</P>
+
+			<ol>
+			<li> Create as few objects as possible, but as many as necessary. Require none.
+			<li> Have a very small footprint.
+			<li> Be straightforward and convenient to use.
+			</ol>
+
+			<P>
+			<B>Hexml is a basic XML parsing and streaming system that, in accordance with ultraliteness,</B>
+			</p>
+
+			<ol>
+				<li> is good at "partial" parsing, creating the exact tree of objects you want.
+				<li> is 20k of compiled java
+				<li> requires very little setup; 
+			</ol>
+
+		-->
+
+		<!-- #DOCINDEX TYPE="PRE,4" -->
+
+<PRE>
+<A HREF="#hexml">hexml</A>
+    <A HREF="#Partial Parsing">Partial Parsing</A>
+    <A HREF="#One simple princ">One simple principle</A>
+        <A HREF="#No DTD">No DTD</A>
+        <A HREF="#Streaming">Streaming</A>
+<A HREF="#Using hexml">Using hexml</A>
+    <A HREF="#Example 1">Example 1</A>
+        <A HREF="#Vocabulary">Vocabulary</A>
+    <A HREF="#Example 2">Example 2</A>
+    <A HREF="#API">API</A>
+    <A HREF="#Hexml object mod">Hexml object model</A>
+</PRE>
+
+		<!-- /#DOCINDEX -->
+		
+		
+<HR ALIGN="CENTER" SIZE="3" WIDTH="50%">
+
+
+<H2><A NAME="Partial Parsing">Partial Parsing</A></H2>
+
+<p> Partial parsing means that hexml must be instructed to recognize
+specific tags.  It only recognizes tags that are in its vocabulary,
+<em>but</em> hexml's definition of a tag is much broader than the XML specification;
+to hexml, a tag is any string of characters that lie between the opening '<B><tt>&lt;</tt></B>' symbol,
+and <TT>(</TT>a <B>space</B> <TT>|</TT> '<B><tt>&gt;</tt></B>'<TT>)</TT>.
+<br>
+Some examples:</p>
+
+<table border="0" cellspacing="2" cellpadding="1">
+<TR>
+	<TD><I>text</I></TD>
+	<td><I>tag according to hexml</I><td>
+</TR>
+	
+<TR>
+	<TD bgcolor="#d0d0d0"><code>&lt;a href="</code> ...</TD>
+	<td><TT>a</TT><td>
+</TR>
+	
+<TR>
+	<TD bgcolor="#d0d0d0"><code>&lt;pre&gt;</code> ...</TD>
+	<td><TT>pre</TT><td>
+</TR>
+
+<TR>
+	<TD bgcolor="#d0d0d0"><CODE>&lt;?xml</CODE> ...</TD>
+	<td><TT>?xml</TT><td>
+</TR>
+
+<TR>
+	<TD bgcolor="#d0d0d0"><CODE>&lt;!--</CODE> ...</TD>
+	<td><TT>!--</TT><td>
+</TR>
+
+<TR>
+	<TD bgcolor="#d0d0d0"><CODE>&lt;&lt;&lt;what?!</CODE> ...</TD>
+	<td><TT>&lt;&lt;what?!</TT><td>
+</TR>
+</table>
+
+<p>
+Everything else are not considered errors, but "unrecognized"
+blocks of text found between recognized tags with which your application
+can do anything.  hexml can pick out what you want from within junk, which
+makes it good at embedded documents, even in other valid XML documents, or
+within attribute values, etc. 
+</P>
+
+<P>
+The set of tags the parser understands is called its vocabulary.  This
+vocabulary can be defined dynamically, or by an input file.
+
+</P>
+
+<H2><A NAME="One simple princ">One simple principle</A></H2>
+
+<P>
+<I>xml tags map to java class names</I>
+</P>
+
+<P>
+hexml lets you specify java classes by name for every tag you wish to
+recognize. For example, if you map the tag name "user" to the class name
+"my_user", then upon encountering something like
+</P>
+
+<pre>
+	&lt;user name=&quot;russell&quot; ...
+</pre>
+
+<P>
+hexml would instantiate the class <CODE>my_user</CODE>.  This object then
+becomes part of the tree of parsed objects.  Such classes usually extend
+the class <CODE>HexmlObject</CODE>.  If they also implement the simple
+interface <CODE>icollection</CODE>, then they are treated as collections
+and the parser will recurse - expecting the closing tag
+<CODE>&lt;/user&gt;</CODE>. 
+
+Note that no design decision has been made here:
+you could implement a class per tag, or one class for all the tags, or anything
+in between.
+</P>
+
+
+<H3><A NAME="No DTD">No DTD</A></H3>
+
+<P>
+<B>hexml</B> does not use a DTD to determine the atomicity of tags,
+attributes, etc., although one could easily add this functionality. I plan
+to demonstrate this in the near future. In keeping with ultralightness,
+such functionality is neither built-in nor required. Currently:
+</P>
+
+<ul>
+	<li> <B>attributes</B><br>each object is responsible for parsing
+	the attribute list, if any.
+	HexmlObject provides default routines to do this, which
+	can be overridden, as for example to implement a specialized
+	sub-parser for interpreting specific types of attribute values.
+	When parsed, an attribute is set via setAttribute(name, value).
+</ul>
+
+<ul>
+	<li> <B>atomicity</B><br>the class interface determines whether the parser treats
+	the tag as an atom or a container, that is whether the parser should
+	recurse or not when this tag is encountered.
+</ul>
+
+<ul>
+	<li> <B>validation</B><br>
+	hexml does no explicit validation of the kind required by a DTD.
+
+</ul>
+
+
+<ul>
+<li> <A NAME="containment"><B>No strict containment requirement</B></A><br>
+	hexml doesn't require
+	strict tag containment; eg, in a typical basic HTML error such as
+	<CODE>&lt;b&gt;&lt;i&gt;bold and italic&lt;/b&gt;&lt;/i&gt;</CODE>, when
+	both <CODE>b</CODE> and <CODE>i</CODE> are recognized collections, hexml can
+	match <CODE>&lt;i&gt;</CODE> with <CODE>&lt;/b&gt;</CODE> because it knows
+	that both b and i are collections, but it doesn't require that
+	<CODE>&lt;b&gt;</CODE> close with <CODE>&lt;/b&gt;</CODE> -- only that the
+	first close tag encountered will close the most recently opened collection. 
+	<i>The opening tag determines the type of the resulting object.</i> This is
+	one of the few cases where streaming the resulting objects will be
+	different than the input; it will result in <CODE>&lt;b&gt;&lt;i&gt;bold
+	and italic&lt;/i&gt;&lt;/b&gt;</CODE> because
+	<CODE>&lt;i&gt;...&lt;/i&gt;</CODE> is a single object (containing,
+	probably, unrecognized text) whose close tag simply mirrors the opening
+	tag.
+</ul>
+
+<!--
+<h3><A NAME="Streaming">Streaming</A></h3>
+
+<P>
+Objects can also be streamed as XML. In all well-behaved cases, the object tree resulting
+from a parse can be streamed to produce the exact input document, regardless of the
+size of the tree in proportion to the document, that is, regardless of how large
+the parser's vocabulary is relative tothe document.
+</P>
+
+<P>
+For objects in the parsed tree which implement iHexmlObject, one simply invokes toString().
+HexmlObject (note: without the i) implements several common streaming utility methods
+for xml-ification- attributes, start tags, end tags, etc.
+</P>
+-->
+
+<h1><A NAME="Using hexml">Using hexml</A></h1>
+
+<!--
+<P>
+The minimum to do anything useful with hexml:
+</P>
+
+<ul>
+<li> an instance of Parser
+<li> an instance of ParseContextImpl
+<li> a vocabulary
+</ul>
+-->
+
+<H2><A NAME="Example 1">Example 1</A></H2>
+
+<P>
+This example prints the &lt;!-- comments --&gt; from an xml-ish file. See demo/hexmltest.java
+</P>
+
+<pre>
+	1	Vocabulary vocab = new Vocabulary();
+	2	vocab.insertEntry("!--", "org.webcycle.hexml.HexmlComment");
+
+	3	HFElementVector entities = new HFElementVector();
+	4	entities.acceptUnrecognizedText = false;
+
+	5	ParseContextImpl pcontext = new ParseContextImpl(entities, vocab);
+
+	6	Parser p = new Parser();
+
+		// do the parse
+	7	p.load(pcontext, "ppy.xml");
+		
+		// print the resulting entities
+	8	System.err.println(entities.toString());
+</pre>
+
+<P>
+Analyzing this in reverse order, in line 8 we print what we parsed. 
+elements is the storage we allocated for the parsing context which happens
+to be a Vector (See HFElementVector).  On line 7 is the actual parse, from
+the file "ppy.xml".  The first argument, pcontext, provides the parser with
+storage for new elements it encounters, its tag vocabulary, unrecognized
+text block handling, and error handling.  Subclassing ParseContextImpl, or
+implementing its interface iParseContext, is an easy way to implement
+interesting and useful functionality.
+</p>
+
+<P>
+Line 5 creates the parse context, giving it an object to store new entities
+and a vocabulary for the parser.
+</P>
+
+<P>
+Line 3 creates the entity storage, and line 4 tells it to ignore unrecognized text.
+The parser only understands what's in its vocabulary, which as established by line 2,
+consists entirely of the XML/HTML comment. So everything that's not a comment will
+be reported as unrecognized, and subsequently ignored because. If line 4 set
+<CODE>entities.acceptUnrecognizeText = true</CODE>, then blocks of unrecognized text
+would be added to the entity storage, probably as String objects (depending on the
+implementation of ParseContextImpl.unrecognizedText() - you may have overridden
+this behavior). When this is the case, the output text in line 8 would look <EM>exactly</EM>
+like the input text (ppy.xml), char for char, <EM>if</EM> <CODE>HexmlComment.toString()</CODE>
+is well behaved.
+</P>
+
+<P>
+Line 2 establishes that every comment will result in instantiating the class
+org.webcycle.hexml.HexmlComment.
+</P>
+
+<p>
+After the parse, by line 7, we have a collection (elementv) of zero or more
+HexmlComment objects - and nothing else, no matter what was in ppy.xml. 
+This is for two reasons: 1) line 2 establishes that comments will result in
+instantiating org.webcycle.hexml.HexmlComment, and 2) the
+parser's element storage has been told not to accept unrecognized text.
+</p>
+
+<P>
+We could change line 2 to:
+</P>
+
+<pre>
+	vocab.insertEntry("pre", "org.webcycle.hexml.HexmlString");
+</pre>
+
+<P>
+and we'd only get what's between <CODE>pre</CODE> blocks (see HexmlString for the reason).
+</P>
+
+<H3><A NAME="Vocabulary">Vocabulary</A></H3>
+
+<P>
+The tag vocabulary given to the parser partially determines the tree it
+produces.  If there is no vocabulary, nothing is recognized and parsing
+anything at all results in a single "unrecognized text" object.
+If you define every single tag that you know you will encounter, the object
+model could be as complex as you want, including messy cyclic structures.
+</P>
+
+<P>
+The class Vocabulary can populate itself from a file, using the same mechanism
+with the class hexml.VocabEntry. The above example coule be stored in a file like
+this (say "vocab.xml"):
+</P>
+
+<pre>	<FONT COLOR="#008000">&lt;VocabEntry tag="!--" classname="org.webcycle.hexml.HexmlComment"&gt;</font></pre>
+
+<P>
+and we'd rewrite lines 1 and 2:
+</P>
+
+<pre>	1	Vocabulary vocab = new Vocabulary();
+	2	vocab.loadFromFile("vocab.xml");</pre>
+
+<P>
+It should be noted that this works because Vocabulary has built-in a map from "VocabEntry" to
+the class "org.webcycle.hexml.VocabEntry" when loadFromFile is called.
+</P>
+	
+<H2><A NAME="Example 2">Example 2</A></H2>
+
+<P>
+This is an excerpt from the tag vocabulary config file of webcycle.org's HTML template system:
+</P>
+
+<pre><FONT COLOR="#008000">
+    &lt;TemplateMap tag=&quot;Insert&quot; classname=&quot;org.webcycle.templates.Insert&quot;&gt;
+    &lt;TemplateMap tag=&quot;IncludeIf&quot; classname=&quot;org.webcycle.templates.IncludeIf&quot;&gt;
+    &lt;TemplateMap tag=&quot;InsertInto&quot; classname=&quot;org.webcycle.templates.InsertInto&quot;&gt;
+    &lt;TemplateMap tag=&quot;InsertIntoTarget&quot; classname=&quot;org.webcycle.templates.InsertIntoTarget&quot;&gt;
+    &lt;TemplateMap tag=&quot;Invoke&quot; classname=&quot;org.webcycle.templates.InvokeMethod&quot;&gt;
+    &lt;TemplateMap tag=&quot;Key&quot; classname=&quot;org.webcycle.templates.Key&quot;&gt;
+    &lt;TemplateMap tag=&quot;List&quot; classname=&quot;org.webcycle.templates.List&quot;&gt;</font></pre>
+
+<P>
+TemplateMap is an extension of VocabEntry, as the template system needs more functionality, but they could
+be the same: one could simply add another vocab entry map from "TemplateMap" to "org.webcycle.hexml.VocabEntry".
+</P>
+
+
+<pre>    &lt;table border="0" cellpadding="2" cellspacing="1"&gt;
+
+        <FONT COLOR="#008000">&lt;insert allAttributes&gt;</FONT>
+
+        <FONT COLOR="#008000">&lt;list object="contents"&gt;</FONT>
+        &lt;tr&gt;
+            &lt;td valign="top" align="right"&gt;&lt;b&gt;<FONT COLOR="#008000">&lt;key&gt;</FONT>&lt;/b&gt;&lt;/td&gt;
+            &lt;td bgcolor="#e0e0e0"&gt;<FONT COLOR="#008000">&lt;Invoke name="getString"&gt;</FONT>&lt;/td&gt;
+        &lt;/tr&gt;
+        <FONT COLOR="#008000">&lt;/list&gt;</FONT>
+
+    &lt;/table&gt; </pre>
+
+
+	<P>
+	This is an excerpt from an HTML template.  Green tags are for hexml as
+	they're defined in the vocabulary above.  Everything else - tr, td, table,
+	are not, so they are completely ignored.  The resulting object tree is
+	chunks of unrecognized text (the black) interspersed with recognized
+	objects (the green).  So in the above example, we'd have this tree of
+	objects:
+	</P>
+	
+	<ul>
+	<li> <TT>"&lt;table border="0" cellpadding="2" cellspacing="1"&gt;\n\n\t"</TT>
+	<li> <FONT COLOR="#008000">an instance of <CODE>org.webcycle.templates.Insert</CODE></FONT>
+	<li> <TT>"\n\n\t"</TT>
+	<li> <FONT COLOR="#008000">an instance of <CODE>org.webcycle.templates.List</CODE></FONT>
+	<ul>
+		<li> <TT>"\n\t&lt;tr&gt;\n\t\t&lt;td valign="top" align="right"&gt;&lt;b&gt;"</TT>
+		<li> <FONT COLOR="#008000">an instance of <CODE>org.webcycle.templates.Key</CODE></FONT>
+		<li> <TT>"&lt;/b&gt;&lt;/td&gt;\n\t\t&lt;td bgcolor="#e0e0e0"&gt;"</TT>
+		<li> <I>etc..</I>
+	</ul>
+	<li> <TT>"\n\n&lt;/table&gt;"</tt>
+</ul>
+
+
+<P>
+Although this example is shown as a tree, the collection defined by
+<CODE>org.webcycle.templates.List</CODE> is responsible for storing its objects.  The
+parser gives such objects its contained objects through the interface
+<CODE>org.webcycle.hexml.iCollection</CODE>. When the parser encounters a collection,
+that is when in this case it encounters <CODE>&lt;list</CODE> and instantiates <CODE>org.webcycle.templates.List</CODE>,
+it asks whether this is an instanceof iCollection. If so, the parser recurses, using
+this instance as its new scope. Likewise, the class <CODE>org.webcycle.templates.Insert</CODE>
+is not an iCollection, so the parser knows it is atomic.
+</P>
+
+<P>
+All objects in the output tree are iHexmlObject implementations, with the exception of unrecognized text,
+which are simply java.lang.String. iHexmlObject defines common methods to get and set attributes, etc.
+</P>
+
+<P>
+In the case of the template system, the purpose is to dynamically generate HTML. The template system
+treats its tags functionally, so its iHexmlObject subclasses implement a streaming functionality
+that "executes" its objects - insert actually inserts something, list loops through its objects for every
+element in the collection named by its attribute "contents", etc. Unrecognized text just dumps itself.
+</P>
+
+<H2><A NAME="API">API</A></H2>
+
+<P>
+these interfaces and classes are part of the <B>org.webcycle.hexml</B> package.
+The index below is organized in categories by how you'll probably encounter them.
+(I hope this is useful. It's surely unfinished...)
+</P>
+
+
+<!-- #INCLUDE FILE="ack:Local:pdev:source:hexml-vp.html" -->
+
+<P>
+<TABLE BORDER="1" CELLSPACING="0">
+	<TR BGCOLOR="#D0D0D0">
+		<TD><I>class</I></TD>
+		<TD><I>Parsing</I></TD>
+		<TD><I>Streaming</I></TD>
+		<TD><I>Object model</I></TD>
+		<TD><I>As a Superclass</I></TD>
+		<TD>why</TD>
+	</TR>
+	<TR>
+		<TD>BasicAtom</TD>
+		<TD>
+			<P ALIGN="CENTER">0
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">5
+		</TD>
+		<TD>represents an atomic entity with attributes (HFAttributeTable)</TD>
+	</TR>
+	<TR>
+		<TD>BasicContainer</TD>
+		<TD>
+			<P ALIGN="CENTER">0
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">5
+		</TD>
+		<TD>represents an entity with attributes (HFAttributeTable) and elements (HFElementVector)</TD>
+	</TR>
+	<TR>
+		<TD>hexml</TD>
+		<TD>
+			<P ALIGN="CENTER">0
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">0
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">0
+		</TD>
+		<TD>static streaming methods</TD>
+	</TR>
+	<TR>
+		<TD>HexmlComment</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">3
+		</TD>
+		<TD>a comment</TD>
+	</TR>
+	<TR>
+		<TD>HexmlElements</TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>a collection of elements</TD>
+	</TR>
+	<TR>
+		<TD>HexmlObject</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>parses/streams attributes; superclass of all</TD>
+	</TR>
+	<TR>
+		<TD>HexmlString</TD>
+		<TD>
+			<P ALIGN="CENTER">0
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">5
+		</TD>
+		<TD>represents the aggregated elements of a container as a String.  </TD>
+	</TR>
+	<TR>
+		<TD>HFAttributeTable</TD>
+		<TD></TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">2
+		</TD>
+		<TD>a lookup table of XML attributes</TD>
+	</TR>
+	<TR>
+		<TD>HFElementVector</TD>
+		<TD>
+			<P ALIGN="CENTER">7
+		</TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">2
+		</TD>
+		<TD>a sequential list of elements</TD>
+	</TR>
+	<TR>
+		<TD><I>iCollection</I></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">&#160;
+		</TD>
+		<TD>&#160;</TD>
+	</TR>
+	<TR>
+		<TD><I>iHexmlAttributes</I></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">&#160;
+		</TD>
+		<TD>&#160;</TD>
+	</TR>
+	<TR>
+		<TD><I>iHexmlFeature</I></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">&#160;
+		</TD>
+		<TD>&#160;</TD>
+	</TR>
+	<TR>
+		<TD><I>iHexmlObject</I></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">&#160;
+		</TD>
+		<TD>&#160;</TD>
+	</TR>
+	<TR>
+		<TD><I>iParseContext</I></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">&#160;
+		</TD>
+		<TD>&#160;</TD>
+	</TR>
+	<TR>
+		<TD>ParseContextImpl</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD></TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">8
+		</TD>
+		<TD>configure parser; handle application-specific parser events</TD>
+	</TR>
+	<TR>
+		<TD>Parser</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">0
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>&#160;</TD>
+	</TR>
+	<TR>
+		<TD>VocabEntry</TD>
+		<TD>
+			<P ALIGN="CENTER">5
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">3
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">3
+		</TD>
+		<TD>&#160;</TD>
+	</TR>
+	<TR>
+		<TD>Vocabulary</TD>
+		<TD>
+			<P ALIGN="CENTER">10
+		</TD>
+		<TD></TD>
+		<TD>
+			<P ALIGN="CENTER">1
+		</TD>
+		<TD>
+			<P ALIGN="CENTER">4
+		</TD>
+		<TD>configure Parser; read vocab from disk</TD>
+	</TR>
+</TABLE>
+
+<!-- /#INCLUDE -->
+
+
+
+
+<TABLE BORDER="0" CELLSPACING="2" CELLPADDING="2">
+<tr>
+	<td colspan="2">
+
+<P>
+<i><A NAME="classes">classes</A></i>
+</P>
+
+</td>
+</tr>
+
+	
+	<tr bgcolor="#c0c0c0">
+		<td>BasicAtom</td>
+		<td>
+			a simple generic atom, with attributes (via HFAttributeTable)
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>BasicContainer</td>
+		<td>
+			a simple generic container, with attributes (via HFAttributeTable) and elements (via HFElementVector)
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>hexml</td>
+		<td>
+			constants and utilities
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>HexmlComment</td>
+		<td>
+			parses/represents an xml <CODE>&lt;!-- comment --&gt;</CODE>
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>HexmlObject</td>
+		<td>
+			basic functionality for hexml objects. Default attribute parsing is done here.
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>HexmlString</td>
+		<td>
+			a container of the form <CODE>&lt;tag&gt;</CODE> <I>opaque string</I> <CODE>&lt;/tag&gt;</CODE>
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>HFAttributeTable</td>
+		<td>
+			Storage for an attribute list in a Hashtable (see BasicAtom, BasicContainer)
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>HFElementVector</td>
+		<td>
+			Storage for an element list in a Vector (see BasicContainer)
+		</td>
+	</tr>
+	
+	<tr bgcolor="#c0c0c0">
+		<td>ParseContextImpl</td>
+		<td>
+			An iParseContext implementation which has its own Vocabulary and iCollection element storage.
+		</td>
+	</tr>
+	
+	<tr bgcolor="#c0c0c0">
+		<td>Parser</td>
+		<td>
+			The parser.
+		</td>
+	</tr>
+	
+	<tr bgcolor="#c0c0c0">
+		<td>VocabEntry</td>
+		<td>
+			one instance of a parser vocabulary word (a tag to classname map)
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>Vocabulary</td>
+		<td>
+			Maps tag names (keys) to java Class objects.
+		</td>
+	</tr>
+<tr>
+	<td colspan="2">
+<P>
+<i><A NAME="interfaces">interfaces</A></i>
+</P>
+</td>
+</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>iCollection</td>
+		<td>
+			interface for collections.
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>iHexmlAttributes</td>
+		<td>
+			interface to objects that store attribute lists (e.g. HFAttributeTable)
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>iHexmlElements</td>
+		<td>
+			interface to objects that store elements (e.g. HFElementVector)
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>iHexmlObject</td>
+		<td>
+			common interface to all hexml parsed objects (set/get attribute, etc)
+		</td>
+	</tr>
+	<tr bgcolor="#c0c0c0">
+		<td>iParseContext</td>
+		<td>
+			common interface to all hexml parsed objects (set/get attribute, etc)
+		</td>
+	</tr>
+	
+</table>
+
+<hr>
+
+<h2><A NAME="Hexml object mod">Hexml object model</A></h2>
+
+<P>
+A simplistic class diagram
+</P>
+
+<center>
+<img src="hexml-model.gif">
+</center>
+
+<hr>
+
+<P>
+<!-- #LASTMODIFIED TEXT="Last modified" FORM="LONG" -->
+Last modified July 11, 2000
+<!-- /#LASTMODIFIED -->
+
+<br>
+
+<A HREF="mailto:russell.holt@destiny.com">Russell Holt</A>
+</P>
+
+</BODY>
+
+</HTML>
