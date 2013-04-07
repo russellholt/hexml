@@ -1,9 +1,9 @@
 # hexml
 
 hexml is a small system for parsing and streaming XML in java in 1999-2000. It was extracted from
-another internal project I did at Destiny Software called the _pattern server_, as the first step in
-releasing that system as an open source project. That never happened back then, but look for it
-here.
+another internal project I did at Destiny (which had become Destiny WebSolutions) called the
+_pattern server_, as the first step in releasing that system as an open source project. That never
+happened back then, but look for it here.
 
 See the file README-original.txt for more details and the folder docs for in-depth documentation.
 
